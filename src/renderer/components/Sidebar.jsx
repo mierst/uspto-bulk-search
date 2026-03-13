@@ -4,7 +4,7 @@ const NAV_ITEMS = [
   { id: 'search', label: 'Search', icon: '\u{1F50D}' },
   { id: 'batch', label: 'Batch Import', icon: '\u{1F4CB}' },
   { id: 'projects', label: 'Projects', icon: '\u{1F4C1}' },
-  { id: 'files', label: 'Local Files', icon: '\u{1F4BE}' },
+  { id: 'files', label: 'Offline Mode', icon: '\u{1F4BE}' },
   { id: 'settings', label: 'Settings', icon: '\u{2699}' },
 ];
 

@@ -1,6 +1,7 @@
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
 const { registerIpcHandlers } = require('./ipc-handlers');
+const usptoClient = require('./services/uspto-client');
 
 let mainWindow;
 
@@ -25,9 +26,14 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   registerIpcHandlers();
   createWindow();
+
+  // Initialize USPTO search session in background (solves WAF challenge)
+  usptoClient.initSession().catch(err => {
+    console.warn('USPTO session init deferred:', err.message);
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -37,6 +43,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  usptoClient.destroy();
   if (process.platform !== 'darwin') {
     app.quit();
   }

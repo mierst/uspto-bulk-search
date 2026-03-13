@@ -1,99 +1,231 @@
+const { BrowserWindow, session } = require('electron');
 const Bottleneck = require('bottleneck');
-const { USPTO_ENDPOINTS, RATE_LIMITS } = require('../../shared/constants');
+const { TMSEARCH_URL, TMSEARCH_PAGE, TSDR_BASE_URL, RATE_LIMITS } = require('../../shared/constants');
 
-// General rate limiter: 60 requests per minute
+// Rate limiter for general API calls
 const generalLimiter = new Bottleneck({
   reservoir: RATE_LIMITS.GENERAL_PER_MINUTE,
   reservoirRefreshAmount: RATE_LIMITS.GENERAL_PER_MINUTE,
   reservoirRefreshInterval: 60 * 1000,
   maxConcurrent: 2,
-  minTime: 1000, // At least 1 second between requests
+  minTime: 1000,
 });
 
-// Download rate limiter: 4 per minute
+// Rate limiter for downloads
 const downloadLimiter = new Bottleneck({
   reservoir: RATE_LIMITS.DOWNLOAD_PER_MINUTE,
   reservoirRefreshAmount: RATE_LIMITS.DOWNLOAD_PER_MINUTE,
   reservoirRefreshInterval: 60 * 1000,
   maxConcurrent: 1,
-  minTime: 15000, // At least 15 seconds between downloads
+  minTime: 15000,
 });
 
 let apiKey = null;
+let searchWindow = null;
+let sessionReady = false;
 
 function setApiKey(key) {
   apiKey = key;
 }
 
-function getHeaders() {
-  const headers = {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-  };
-  if (apiKey) {
-    headers['X-API-Key'] = apiKey;
+/**
+ * Initialize a hidden browser window to establish a session with tmsearch.uspto.gov.
+ * This solves the WAF challenge and sets up cookies needed for API calls.
+ */
+async function initSession() {
+  if (searchWindow && !searchWindow.isDestroyed()) {
+    return;
   }
-  return headers;
+
+  searchWindow = new BrowserWindow({
+    show: false,
+    width: 800,
+    height: 600,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+
+  searchWindow.on('closed', () => {
+    searchWindow = null;
+    sessionReady = false;
+  });
+
+  try {
+    await searchWindow.loadURL(TMSEARCH_PAGE);
+    // Wait for WAF challenge script to execute and set cookies
+    await new Promise(resolve => setTimeout(resolve, 4000));
+    sessionReady = true;
+    console.log('[USPTO] Search session initialized');
+  } catch (err) {
+    console.error('[USPTO] Failed to init session:', err.message);
+    throw new Error('Could not connect to USPTO. Check your internet connection.');
+  }
 }
 
 /**
- * Search USPTO bulk data for trademark records
+ * Ensure the hidden browser session is ready before making API calls.
+ */
+async function ensureSession() {
+  if (!sessionReady || !searchWindow || searchWindow.isDestroyed()) {
+    await initSession();
+  }
+}
+
+/**
+ * Make a fetch request using the BrowserWindow's session cookies.
+ * Uses Electron's net module via session.fetch() to run in the main process,
+ * completely avoiding Zone.js/Angular promise interception in the renderer.
+ */
+async function sessionFetch(url, options = {}) {
+  await ensureSession();
+  const ses = searchWindow.webContents.session;
+  const response = await ses.fetch(url, options);
+  return response;
+}
+
+/**
+ * Search trademarks by mark text using the tmsearch Elasticsearch API.
  */
 async function search(query, options = {}) {
   return generalLimiter.schedule(async () => {
+    const size = options.rows || 50;
+    const from = options.start || 0;
+
+    // Build filter clauses from options
+    const filters = [];
+    if (options.alive !== undefined) {
+      filters.push({ term: { alive: options.alive } });
+    }
+    if (options.markType) {
+      filters.push({ match_phrase: { markType: options.markType } });
+    }
+    if (options.internationalClass) {
+      filters.push({ match_phrase: { internationalClass: options.internationalClass } });
+    }
+    if (options.ownerName) {
+      filters.push({ match: { ownerName: options.ownerName } });
+    }
+    if (options.filedAfter || options.filedBefore) {
+      const range = {};
+      if (options.filedAfter) range.gte = options.filedAfter;
+      if (options.filedBefore) range.lte = options.filedBefore;
+      filters.push({ range: { filedDate: range } });
+    }
+
+    // Build Elasticsearch query matching what tmsearch.uspto.gov uses
+    const boolQuery = {
+      must: [
+        {
+          bool: {
+            should: [
+              { match_phrase: { WM: { query, boost: 5 } } },
+              { match: { WM: { query, boost: 2 } } },
+              { match_phrase: { PM: { query, boost: 2 } } },
+            ],
+          },
+        },
+      ],
+    };
+    if (filters.length > 0) {
+      boolQuery.filter = filters;
+    }
+
     const body = {
-      productTitle: options.productTitle || 'Trademark',
-      query: query,
-      start: options.start || 0,
-      rows: options.rows || 25,
+      query: { bool: boolQuery },
+      size,
+      from,
+      track_total_hits: true,
+      _source: [
+        'alive', 'attorney', 'filedDate', 'goodsAndServices', 'id',
+        'internationalClass', 'markDescription', 'markType', 'ownerName',
+        'ownerType', 'registrationDate', 'registrationId', 'registrationType',
+        'wordmark', 'wordmarkPseudoText', 'abandonDate', 'cancelDate',
+        'disclaimer', 'drawingCode', 'usClass',
+      ],
     };
 
-    const response = await fetch(USPTO_ENDPOINTS.SEARCH, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify(body),
-    });
+    try {
+      console.log('[USPTO] Searching for:', query);
+      const response = await sessionFetch(TMSEARCH_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
 
+      if (!response.ok) {
+        const text = await response.text();
+        console.error('[USPTO] HTTP', response.status, text.substring(0, 300));
+
+        if (response.status === 403 || response.status === 401) {
+          // WAF or auth issue — reinit session and retry
+          console.log('[USPTO] Reinitializing session...');
+          sessionReady = false;
+          await initSession();
+          const retry = await sessionFetch(TMSEARCH_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: JSON.stringify(body),
+          });
+          if (!retry.ok) {
+            throw new Error(`USPTO search failed after retry: ${retry.status}`);
+          }
+          const retryData = await retry.json();
+          return normalizeSearchResults(retryData);
+        }
+        throw new Error(`USPTO search failed: ${response.status}`);
+      }
+
+      const text = await response.text();
+      let data;
+      try { data = JSON.parse(text); }
+      catch (e) { throw new Error('Non-JSON response: ' + text.substring(0, 200)); }
+      console.log('[USPTO] Hits:', data.hits?.totalValue ?? data.hits?.total?.value ?? 'none');
+      return normalizeSearchResults(data);
+    } catch (err) {
+      console.error('[USPTO] Search error:', err.message);
+      throw new Error(`USPTO search failed: ${err.message}`);
+    }
+  });
+}
+
+/**
+ * Get case status from TSDR API by serial or registration number.
+ * @param {string} caseId - e.g., "sn78787878" or "rn1234567"
+ */
+async function getCaseStatus(caseId) {
+  return generalLimiter.schedule(async () => {
+    const url = `${TSDR_BASE_URL}/ts/cd/casestatus/${caseId}/info`;
+    const headers = { Accept: 'application/xml' };
+    if (apiKey) headers['USPTO-API-Key'] = apiKey;
+
+    const response = await fetch(url, { headers });
     if (!response.ok) {
       if (response.status === 429) {
-        throw new Error('Rate limit exceeded. Please wait a moment and try again.');
+        throw new Error('Rate limit exceeded. Please wait and try again.');
       }
-      throw new Error(`USPTO search failed: ${response.status} ${response.statusText}`);
+      throw new Error(`TSDR lookup failed: ${response.status} ${response.statusText}`);
     }
-
-    const data = await response.json();
-    return normalizeSearchResults(data);
+    return response.text();
   });
 }
 
 /**
- * Get product details from USPTO
- */
-async function getProduct(productId) {
-  return generalLimiter.schedule(async () => {
-    const url = `${USPTO_ENDPOINTS.PRODUCT}?productId=${encodeURIComponent(productId)}`;
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: getHeaders(),
-    });
-
-    if (!response.ok) {
-      throw new Error(`USPTO product lookup failed: ${response.status}`);
-    }
-
-    return response.json();
-  });
-}
-
-/**
- * Download a bulk data file from USPTO
+ * Download a file from a given URL.
  */
 async function downloadFile(url) {
   return downloadLimiter.schedule(async () => {
-    const response = await fetch(url, {
-      headers: apiKey ? { 'X-API-Key': apiKey } : {},
-    });
+    const headers = {};
+    if (apiKey) headers['x-api-key'] = apiKey;
 
+    const response = await fetch(url, { headers, redirect: 'follow' });
     if (!response.ok) {
       if (response.status === 429) {
         throw new Error('Download rate limit exceeded. Please wait and try again.');
@@ -107,38 +239,60 @@ async function downloadFile(url) {
 }
 
 /**
- * Normalize USPTO search response into consistent format
+ * Normalize Elasticsearch response from tmsearch into our app format.
  */
 function normalizeSearchResults(data) {
-  // The actual response structure may vary; this normalizes it
   const items = [];
-  const records = data.results || data.response?.docs || data.docs || [];
+  const hits = data.hits?.hits || [];
 
-  for (const record of records) {
+  for (const hit of hits) {
+    const src = hit.source || hit._source || {};
     items.push({
-      serialNumber: record.serialNumber || record.serial_number || record.applicationNumberText || null,
-      registrationNumber: record.registrationNumber || record.registration_number || null,
-      markText: record.markText || record.mark_text || record.wordMark || record.productTitle || null,
-      status: record.status || record.markCurrentStatusExternalDescriptionText || null,
-      assignor: record.assignor || null,
-      assignee: record.assignee || null,
-      executionDate: record.executionDate || record.execution_date || null,
-      recordedDate: record.recordedDate || record.recorded_date || null,
-      reelFrame: record.reelFrame || record.reel_frame || null,
-      assignmentCount: record.assignmentCount || null,
-      raw: record,
+      serialNumber: src.id || null,
+      registrationNumber: src.registrationId || null,
+      markText: src.wordmark || src.wordmarkPseudoText || null,
+      status: src.alive ? 'LIVE' : 'DEAD',
+      alive: src.alive || false,
+      ownerName: src.ownerName || null,
+      ownerType: src.ownerType || null,
+      attorney: src.attorney || null,
+      filedDate: src.filedDate || null,
+      registrationDate: src.registrationDate || null,
+      abandonDate: src.abandonDate || null,
+      cancelDate: src.cancelDate || null,
+      markType: src.markType || null,
+      markDescription: src.markDescription || null,
+      goodsAndServices: src.goodsAndServices || null,
+      internationalClass: src.internationalClass || null,
+      drawingCode: src.drawingCode || null,
+      disclaimer: src.disclaimer || null,
+      raw: src,
     });
   }
 
   return {
-    numFound: data.numFound || data.response?.numFound || items.length,
+    numFound: data.hits?.totalValue || data.hits?.total?.value || items.length,
     items,
   };
 }
 
+/**
+ * Clean up the hidden browser window on app exit.
+ */
+function destroy() {
+  if (searchWindow && !searchWindow.isDestroyed()) {
+    searchWindow.close();
+    searchWindow = null;
+    sessionReady = false;
+  }
+}
+
 module.exports = {
   search,
-  getProduct,
+  getCaseStatus,
   downloadFile,
   setApiKey,
+  initSession,
+  destroy,
+  normalizeSearchResults,
 };

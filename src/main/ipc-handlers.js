@@ -1,4 +1,4 @@
-const { ipcMain, dialog } = require('electron');
+const { ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const Store = require('electron-store');
 const database = require('./database');
@@ -24,15 +24,18 @@ function getDataRoot() {
 }
 
 function registerIpcHandlers() {
-  // --- USPTO Search ---
-  ipcMain.handle('uspto:search', async (_event, query) => {
+  // --- USPTO Trademark Search ---
+  ipcMain.handle('uspto:search', async (_event, query, options) => {
     const apiKey = store.get('apiKey');
     if (apiKey) usptoClient.setApiKey(apiKey);
-    return usptoClient.search(query);
+    return usptoClient.search(query, options);
   });
 
-  ipcMain.handle('uspto:product', async (_event, productId) => {
-    return usptoClient.getProduct(productId);
+  // --- TSDR Case Status ---
+  ipcMain.handle('uspto:caseStatus', async (_event, caseId) => {
+    const apiKey = store.get('apiKey');
+    if (apiKey) usptoClient.setApiKey(apiKey);
+    return usptoClient.getCaseStatus(caseId);
   });
 
   ipcMain.handle('uspto:download', async (_event, url, projectId) => {
@@ -63,6 +66,11 @@ function registerIpcHandlers() {
     return await database.createProject(dataRoot, name, searchTerms);
   });
 
+  ipcMain.handle('project:findOrCreate', async (_event, name, searchTerms) => {
+    const dataRoot = getDataRoot();
+    return await database.findOrCreateProject(dataRoot, name, searchTerms);
+  });
+
   ipcMain.handle('project:list', async () => {
     const dataRoot = getDataRoot();
     return await database.listProjects(dataRoot);
@@ -78,6 +86,11 @@ function registerIpcHandlers() {
     await database.deleteProject(dataRoot, id);
   });
 
+  ipcMain.handle('project:rename', async (_event, id, newName) => {
+    const dataRoot = getDataRoot();
+    await database.renameProject(dataRoot, id, newName);
+  });
+
   // --- Assignments ---
   ipcMain.handle('assignment:list', async (_event, projectId) => {
     const dataRoot = getDataRoot();
@@ -87,6 +100,11 @@ function registerIpcHandlers() {
   ipcMain.handle('assignment:save', async (_event, projectId, data) => {
     const dataRoot = getDataRoot();
     return await database.saveAssignment(dataRoot, projectId, data);
+  });
+
+  ipcMain.handle('assignment:projects', async (_event, serialNumber) => {
+    const dataRoot = getDataRoot();
+    return await database.getAssignmentProjects(dataRoot, serialNumber);
   });
 
   // --- Local Search ---
@@ -164,6 +182,14 @@ function registerIpcHandlers() {
     const selectedPath = result.filePaths[0];
     store.set('saveLocation', selectedPath);
     return selectedPath;
+  });
+
+  // --- External Links ---
+  ipcMain.handle('shell:openExternal', async (_event, url) => {
+    // Only allow USPTO URLs
+    if (url.startsWith('https://tsdr.uspto.gov/') || url.startsWith('https://tmsearch.uspto.gov/')) {
+      await shell.openExternal(url);
+    }
   });
 
   // --- Batch Search ---

@@ -81,24 +81,25 @@ function closeDb() {
   }
 }
 
-// Helper to run a query and return rows as objects
+// Helper to run a query and return rows as objects (using prepared statements for reliable param binding)
 function queryAll(sql, params = []) {
-  const result = db.exec(sql, params);
-  if (!result.length) return [];
-  const columns = result[0].columns;
-  return result[0].values.map((row) => {
-    const obj = {};
-    columns.forEach((col, i) => { obj[col] = row[i]; });
-    return obj;
-  });
+  const stmt = db.prepare(sql);
+  if (params.length) stmt.bind(params);
+  const rows = [];
+  while (stmt.step()) {
+    rows.push(stmt.getAsObject());
+  }
+  stmt.free();
+  return rows;
 }
 
 function runStmt(sql, params = []) {
   db.run(sql, params);
-  saveDb();
-  // sql.js doesn't have lastInsertRowid directly, so query it
+  // Must query last_insert_rowid BEFORE saveDb, because db.export() resets it to 0
   const result = db.exec('SELECT last_insert_rowid() as id');
-  return { lastInsertRowid: result[0]?.values[0]?.[0] || 0 };
+  const lastInsertRowid = result[0]?.values[0]?.[0] || 0;
+  saveDb();
+  return { lastInsertRowid };
 }
 
 // Project operations
@@ -153,6 +154,22 @@ async function deleteProject(dataRoot, id) {
   }
 }
 
+async function renameProject(dataRoot, id, newName) {
+  await getDb(dataRoot);
+  db.run('UPDATE projects SET name = ? WHERE id = ?', [newName, id]);
+  saveDb();
+}
+
+// Find or create a project (deduplicates by name)
+async function findOrCreateProject(dataRoot, name, searchTerms) {
+  await getDb(dataRoot);
+  const existing = queryAll('SELECT * FROM projects WHERE name = ? LIMIT 1', [name]);
+  if (existing.length > 0) {
+    return { id: existing[0].id, name: existing[0].name, storagePath: existing[0].storage_path };
+  }
+  return createProject(dataRoot, name, searchTerms);
+}
+
 // Assignment operations
 async function saveAssignment(dataRoot, projectId, data) {
   await getDb(dataRoot);
@@ -188,6 +205,15 @@ async function saveAssignment(dataRoot, projectId, data) {
 async function getAssignments(dataRoot, projectId) {
   await getDb(dataRoot);
   return queryAll('SELECT * FROM assignments WHERE project_id = ? ORDER BY recorded_date DESC', [projectId]);
+}
+
+async function getAssignmentProjects(dataRoot, serialNumber) {
+  if (!serialNumber) return [];
+  await getDb(dataRoot);
+  return queryAll(
+    `SELECT p.id, p.name FROM assignments a JOIN projects p ON p.id = a.project_id WHERE a.serial_number = ?`,
+    [serialNumber]
+  );
 }
 
 // Download tracking
@@ -287,11 +313,14 @@ module.exports = {
   getDb,
   closeDb,
   createProject,
+  findOrCreateProject,
   listProjects,
   getProject,
   deleteProject,
+  renameProject,
   saveAssignment,
   getAssignments,
+  getAssignmentProjects,
   trackDownload,
   getDownloads,
   deleteDownload,

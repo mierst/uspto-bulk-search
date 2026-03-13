@@ -3,6 +3,7 @@ import Sidebar from './components/Sidebar';
 import SearchPanel from './components/SearchPanel';
 import ResultsList from './components/ResultsList';
 import AssignmentView from './components/AssignmentView';
+import ProjectDetail from './components/ProjectDetail';
 import FileManager from './components/FileManager';
 import BatchImport from './components/BatchImport';
 import Settings from './components/Settings';
@@ -11,6 +12,7 @@ import SetupWizard from './components/SetupWizard';
 const VIEWS = {
   SEARCH: 'search',
   PROJECTS: 'projects',
+  PROJECT_DETAIL: 'project_detail',
   FILES: 'files',
   SETTINGS: 'settings',
   ASSIGNMENT: 'assignment',
@@ -23,6 +25,7 @@ export default function App() {
   const [searchResults, setSearchResults] = useState(null);
   const [selectedAssignment, setSelectedAssignment] = useState(null);
   const [activeProjectId, setActiveProjectId] = useState(null);
+  const [previousView, setPreviousView] = useState(VIEWS.SEARCH);
 
   useEffect(() => {
     checkSetup();
@@ -37,7 +40,8 @@ export default function App() {
     }
   }
 
-  function handleViewAssignment(assignment) {
+  function handleViewAssignment(assignment, fromView) {
+    setPreviousView(fromView || activeView);
     setSelectedAssignment(assignment);
     setActiveView(VIEWS.ASSIGNMENT);
   }
@@ -61,7 +65,7 @@ export default function App() {
       case VIEWS.SEARCH:
         return (
           <div className="content-area">
-            <SearchPanel onResults={setSearchResults} />
+            <SearchPanel onResults={setSearchResults} hasResults={!!searchResults} />
             {searchResults && (
               <ResultsList
                 results={searchResults}
@@ -74,7 +78,15 @@ export default function App() {
         return (
           <AssignmentView
             assignment={selectedAssignment}
-            onBack={() => setActiveView(VIEWS.SEARCH)}
+            onBack={() => setActiveView(previousView)}
+          />
+        );
+      case VIEWS.PROJECT_DETAIL:
+        return (
+          <ProjectDetail
+            projectId={activeProjectId}
+            onViewAssignment={(a) => handleViewAssignment(a, VIEWS.PROJECT_DETAIL)}
+            onBack={() => setActiveView(VIEWS.PROJECTS)}
           />
         );
       case VIEWS.PROJECTS:
@@ -83,12 +95,17 @@ export default function App() {
             mode="projects"
             onSelectProject={(id) => {
               setActiveProjectId(id);
-              setActiveView(VIEWS.SEARCH);
+              setActiveView(VIEWS.PROJECT_DETAIL);
             }}
           />
         );
       case VIEWS.FILES:
-        return <FileManager mode="files" />;
+        return (
+          <FileManager
+            mode="files"
+            onViewAssignment={(a) => handleViewAssignment(a, VIEWS.FILES)}
+          />
+        );
       case VIEWS.BATCH:
         return <BatchImport />;
       case VIEWS.SETTINGS:

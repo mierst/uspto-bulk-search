@@ -1,12 +1,19 @@
-const USPTO_BASE_URL = 'https://data.uspto.gov/apis/bulk-data';
-
 module.exports = {
-  USPTO_BASE_URL,
-  USPTO_ENDPOINTS: {
-    SEARCH: `${USPTO_BASE_URL}/search`,
-    PRODUCT: `${USPTO_BASE_URL}/product`,
-    DOWNLOAD: `${USPTO_BASE_URL}/download`,
+  // Trademark search (Elasticsearch-based, requires browser session for WAF)
+  TMSEARCH_URL: 'https://tmsearch.uspto.gov/prod-stage-v1-0-0/tmsearch',
+  TMSEARCH_PAGE: 'https://tmsearch.uspto.gov/search/search-information',
+
+  // TSDR API (case status/documents by serial or registration number)
+  TSDR_BASE_URL: 'https://tsdrapi.uspto.gov',
+
+  // Bulk Datasets API (for downloading bulk data files)
+  BULK_DATA_BASE_URL: 'https://api.uspto.gov/api/v1/datasets/products',
+  BULK_DATA_ENDPOINTS: {
+    SEARCH: 'https://api.uspto.gov/api/v1/datasets/products/search',
+    PRODUCT: 'https://api.uspto.gov/api/v1/datasets/products',
+    DOWNLOAD: 'https://api.uspto.gov/api/v1/datasets/products/files',
   },
+
   RATE_LIMITS: {
     GENERAL_PER_MINUTE: 60,
     DOWNLOAD_PER_MINUTE: 4,
