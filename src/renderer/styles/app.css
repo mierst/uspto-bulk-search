@@ -510,3 +510,126 @@ body {
   font-size: 12px;
   color: var(--color-text-secondary);
 }
+
+/* Setup wizard */
+.setup-overlay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+}
+
+.setup-card {
+  background: var(--color-card);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  width: 520px;
+  max-width: 90vw;
+  overflow: hidden;
+}
+
+.setup-header {
+  background: var(--color-sidebar);
+  padding: 32px 40px 24px;
+  text-align: center;
+  color: white;
+}
+
+.setup-header h1 {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.setup-header p {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.setup-steps {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 24px 40px 0;
+}
+
+.setup-step-indicator {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  background: var(--color-border);
+  color: var(--color-text-secondary);
+  transition: all 0.2s;
+}
+
+.setup-step-indicator.active {
+  background: var(--color-primary);
+  color: white;
+}
+
+.setup-step-line {
+  width: 60px;
+  height: 2px;
+  background: var(--color-border);
+  transition: background 0.2s;
+}
+
+.setup-step-line.active {
+  background: var(--color-primary);
+}
+
+.setup-body {
+  padding: 24px 40px 32px;
+}
+
+.setup-body h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.setup-description {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.setup-field {
+  margin-bottom: 20px;
+}
+
+.setup-field input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 14px;
+  outline: none;
+}
+
+.setup-field input:focus {
+  border-color: var(--color-primary);
+}
+
+.setup-path-preview {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--color-success);
+  word-break: break-all;
+}
+
+.setup-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
