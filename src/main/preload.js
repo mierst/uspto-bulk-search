@@ -66,4 +66,5 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('update:downloaded', handler);
   },
   installUpdate: () => ipcRenderer.invoke('update:install'),
+  checkForUpdate: () => ipcRenderer.invoke('update:check'),
 });

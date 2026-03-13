@@ -128,6 +128,21 @@ body {
   opacity: 0.6;
 }
 
+.sidebar-version a {
+  color: var(--color-sidebar-text);
+  text-decoration: none;
+  opacity: 0.8;
+}
+
+.sidebar-version a:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+.sidebar-version .update-status {
+  opacity: 0.8;
+}
+
 /* Main content */
 .main-content {
   flex: 1;

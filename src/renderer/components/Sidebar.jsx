@@ -10,6 +10,8 @@ const NAV_ITEMS = [
 
 export default function Sidebar({ activeView, onNavigate }) {
   const [projects, setProjects] = useState([]);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateResult, setUpdateResult] = useState(null); // null | 'none' | version string
 
   useEffect(() => {
     loadProjects();
@@ -22,6 +24,19 @@ export default function Sidebar({ activeView, onNavigate }) {
     } catch {
       // API not available yet during dev
     }
+  }
+
+  async function handleCheckUpdate() {
+    if (checkingUpdate) return;
+    setCheckingUpdate(true);
+    setUpdateResult(null);
+    try {
+      const version = await window.api.checkForUpdate();
+      setUpdateResult(version || 'none');
+    } catch {
+      setUpdateResult('none');
+    }
+    setCheckingUpdate(false);
   }
 
   return (
@@ -57,7 +72,15 @@ export default function Sidebar({ activeView, onNavigate }) {
           </div>
         </>
       )}
-      <div className="sidebar-version">v{window.appVersion}</div>
+      <div className="sidebar-version">
+        <span>v{window.appVersion}</span>
+        {' · '}
+        <a href="#" onClick={(e) => { e.preventDefault(); handleCheckUpdate(); }}>
+          {checkingUpdate ? 'Checking...' : 'Check for update'}
+        </a>
+        {updateResult === 'none' && <span className="update-status"> — Up to date</span>}
+        {updateResult && updateResult !== 'none' && <span className="update-status"> — v{updateResult} found</span>}
+      </div>
     </aside>
   );
 }

@@ -65,6 +65,11 @@ app.whenReady().then(async () => {
     autoUpdater.quitAndInstall(false, true);
   });
 
+  ipcMain.handle('update:check', async () => {
+    const result = await autoUpdater.checkForUpdates();
+    return result?.updateInfo?.version || null;
+  });
+
   // Initialize USPTO search session in background (solves WAF challenge)
   usptoClient.initSession().catch(err => {
     console.warn('USPTO session init deferred:', err.message);
