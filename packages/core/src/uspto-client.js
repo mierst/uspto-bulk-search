@@ -138,9 +138,26 @@ async function initPuppeteerSession() {
   console.log('[USPTO] Initializing Puppeteer session...');
 
   if (!puppeteerBrowser) {
+    // Start Xvfb virtual display if not already running (allows non-headless Chrome)
+    const { execSync } = require('child_process');
+    try {
+      execSync('pgrep -x Xvfb', { stdio: 'ignore' });
+      console.log('[USPTO] Xvfb already running');
+    } catch {
+      try {
+        execSync('Xvfb :99 -screen 0 1920x1080x24 &', { stdio: 'ignore' });
+        console.log('[USPTO] Started Xvfb on :99');
+      } catch (e) {
+        console.log('[USPTO] Xvfb not available, using headless mode');
+      }
+    }
+    const hasXvfb = (() => {
+      try { execSync('pgrep -x Xvfb', { stdio: 'ignore' }); return true; } catch { return false; }
+    })();
+
     const systemChrome = findSystemChrome();
     const launchOptions = {
-      headless: 'new',
+      headless: hasXvfb ? false : 'new',
       args: [
         '--no-sandbox',
         '--disable-dev-shm-usage',
@@ -150,6 +167,10 @@ async function initPuppeteerSession() {
         '--window-size=1920,1080',
       ],
     };
+    if (hasXvfb) {
+      process.env.DISPLAY = ':99';
+      console.log('[USPTO] Using Xvfb virtual display :99 (non-headless)');
+    }
     if (systemChrome) {
       launchOptions.executablePath = systemChrome;
       console.log('[USPTO] Using system Chrome:', systemChrome);
