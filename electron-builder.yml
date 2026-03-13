@@ -1,5 +1,6 @@
 appId: com.usptotools.bulk-search
 productName: USPTO Bulk Search
+publish: null
 directories:
   output: dist/installer
 files:
