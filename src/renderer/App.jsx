@@ -34,7 +34,7 @@ export default function App() {
 
   useEffect(() => {
     const cleanups = [];
-    if (window.api.onUpdateAvailable) {
+    if (window.api?.onUpdateAvailable) {
       cleanups.push(window.api.onUpdateAvailable((version) => {
         setUpdateStatus({ state: 'downloading', version, percent: 0 });
       }));

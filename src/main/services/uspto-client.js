@@ -281,7 +281,7 @@ function normalizeSearchResults(data) {
  */
 function destroy() {
   if (searchWindow && !searchWindow.isDestroyed()) {
-    searchWindow.close();
+    searchWindow.destroy();
     searchWindow = null;
     sessionReady = false;
   }

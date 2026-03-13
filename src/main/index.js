@@ -27,6 +27,10 @@ function createWindow() {
   }
 }
 
+ipcMain.on('app:version', (event) => {
+  event.returnValue = app.getVersion();
+});
+
 app.whenReady().then(async () => {
   registerIpcHandlers();
   createWindow();
@@ -78,4 +82,9 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+// Force exit if quit hangs (e.g. hidden windows blocking close)
+app.on('will-quit', () => {
+  setTimeout(() => process.exit(0), 3000);
 });

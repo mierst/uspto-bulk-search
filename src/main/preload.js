@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-contextBridge.exposeInMainWorld('appVersion', process.env.npm_package_version || require('../../package.json').version);
+contextBridge.exposeInMainWorld('appVersion', ipcRenderer.sendSync('app:version'));
 
 contextBridge.exposeInMainWorld('api', {
   // Search
