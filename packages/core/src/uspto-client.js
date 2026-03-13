@@ -193,23 +193,15 @@ async function initPuppeteerSession() {
     console.log('[USPTO] Navigating to', TMSEARCH_PAGE);
     await puppeteerPage.goto(TMSEARCH_PAGE, { waitUntil: 'networkidle2', timeout: 60000 });
 
-    // Wait for WAF challenge — poll for cookies up to 30 seconds
-    let cookies = [];
-    for (let i = 0; i < 15; i++) {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      cookies = await puppeteerPage.cookies();
-      const url = puppeteerPage.url();
-      console.log(`[USPTO] Wait ${(i + 1) * 2}s — ${cookies.length} cookies, url: ${url}`);
-      // WAF solved when we have multiple cookies (aws-waf-token + session)
-      if (cookies.length >= 2) break;
-    }
+    // Wait for WAF challenge script to execute and set aws-waf-token cookie
+    await new Promise(resolve => setTimeout(resolve, 5000));
 
-    // Log cookie names for debugging
-    console.log('[USPTO] Cookie names:', cookies.map(c => c.name).join(', '));
+    const cookies = await puppeteerPage.cookies();
+    console.log('[USPTO] Cookies:', cookies.map(c => c.name).join(', '));
 
     puppeteerCookies = cookies;
     sessionReady = true;
-    console.log('[USPTO] Puppeteer session initialized, got', puppeteerCookies.length, 'cookies');
+    console.log('[USPTO] Puppeteer session initialized');
 
     // Keep page open — we'll execute fetches inside the browser context
     // where WAF tokens are automatically managed
