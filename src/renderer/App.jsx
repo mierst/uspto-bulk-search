@@ -26,9 +26,26 @@ export default function App() {
   const [selectedAssignment, setSelectedAssignment] = useState(null);
   const [activeProjectId, setActiveProjectId] = useState(null);
   const [previousView, setPreviousView] = useState(VIEWS.SEARCH);
+  const [updateStatus, setUpdateStatus] = useState(null); // null | {state, version, percent}
 
   useEffect(() => {
     checkSetup();
+  }, []);
+
+  useEffect(() => {
+    const cleanups = [];
+    if (window.api.onUpdateAvailable) {
+      cleanups.push(window.api.onUpdateAvailable((version) => {
+        setUpdateStatus({ state: 'downloading', version, percent: 0 });
+      }));
+      cleanups.push(window.api.onUpdateProgress((percent) => {
+        setUpdateStatus(prev => prev ? { ...prev, percent } : null);
+      }));
+      cleanups.push(window.api.onUpdateDownloaded((version) => {
+        setUpdateStatus({ state: 'ready', version, percent: 100 });
+      }));
+    }
+    return () => cleanups.forEach(fn => fn());
   }, []);
 
   async function checkSetup() {
@@ -122,6 +139,19 @@ export default function App() {
         onNavigate={setActiveView}
       />
       <main className="main-content">
+        {updateStatus && (
+          <div className="update-banner">
+            {updateStatus.state === 'downloading' ? (
+              <span>Downloading update v{updateStatus.version}... {updateStatus.percent}%</span>
+            ) : (
+              <>
+                <span>Update v{updateStatus.version} ready</span>
+                <button onClick={() => window.api.installUpdate()}>Restart Now</button>
+              </>
+            )}
+            <button className="dismiss-btn" onClick={() => setUpdateStatus(null)}>&times;</button>
+          </div>
+        )}
         {renderContent()}
       </main>
     </div>

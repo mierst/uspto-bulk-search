@@ -1,5 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+contextBridge.exposeInMainWorld('appVersion', process.env.npm_package_version || require('../../package.json').version);
+
 contextBridge.exposeInMainWorld('api', {
   // Search
   searchUSPTO: (query, options) => ipcRenderer.invoke('uspto:search', query, options),
@@ -45,4 +47,22 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('batch:progress', handler);
     return () => ipcRenderer.removeListener('batch:progress', handler);
   },
+
+  // Auto-update
+  onUpdateAvailable: (callback) => {
+    const handler = (_event, version) => callback(version);
+    ipcRenderer.on('update:available', handler);
+    return () => ipcRenderer.removeListener('update:available', handler);
+  },
+  onUpdateProgress: (callback) => {
+    const handler = (_event, percent) => callback(percent);
+    ipcRenderer.on('update:progress', handler);
+    return () => ipcRenderer.removeListener('update:progress', handler);
+  },
+  onUpdateDownloaded: (callback) => {
+    const handler = (_event, version) => callback(version);
+    ipcRenderer.on('update:downloaded', handler);
+    return () => ipcRenderer.removeListener('update:downloaded', handler);
+  },
+  installUpdate: () => ipcRenderer.invoke('update:install'),
 });

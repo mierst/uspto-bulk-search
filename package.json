@@ -1,6 +1,6 @@
 {
   "name": "uspto-bulk-search",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "USPTO Trademark Clearance Search Tool for IP attorneys and paralegals",
   "main": "src/main/index.js",
   "scripts": {
@@ -16,6 +16,7 @@
   "dependencies": {
     "bottleneck": "^2.19.5",
     "electron-store": "^8.2.0",
+    "electron-updater": "^6.8.3",
     "flexsearch": "^0.7.43",
     "papaparse": "^5.4.1",
     "pdf-parse": "^1.1.1",

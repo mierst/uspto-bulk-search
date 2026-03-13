@@ -1,5 +1,6 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
+const { autoUpdater } = require('electron-updater');
 const { registerIpcHandlers } = require('./ipc-handlers');
 const usptoClient = require('./services/uspto-client');
 
@@ -29,6 +30,36 @@ function createWindow() {
 app.whenReady().then(async () => {
   registerIpcHandlers();
   createWindow();
+
+  // Auto-updater (production only)
+  if (app.isPackaged) {
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+
+    autoUpdater.on('update-available', (info) => {
+      mainWindow?.webContents.send('update:available', info.version);
+    });
+
+    autoUpdater.on('download-progress', (progress) => {
+      mainWindow?.webContents.send('update:progress', Math.round(progress.percent));
+    });
+
+    autoUpdater.on('update-downloaded', (info) => {
+      mainWindow?.webContents.send('update:downloaded', info.version);
+    });
+
+    autoUpdater.on('error', (err) => {
+      console.warn('Auto-updater error:', err.message);
+    });
+
+    autoUpdater.checkForUpdates().catch(err => {
+      console.warn('Update check deferred:', err.message);
+    });
+  }
+
+  ipcMain.handle('update:install', () => {
+    autoUpdater.quitAndInstall(false, true);
+  });
 
   // Initialize USPTO search session in background (solves WAF challenge)
   usptoClient.initSession().catch(err => {

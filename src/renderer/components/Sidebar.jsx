@@ -57,6 +57,7 @@ export default function Sidebar({ activeView, onNavigate }) {
           </div>
         </>
       )}
+      <div className="sidebar-version">v{window.appVersion}</div>
     </aside>
   );
 }
