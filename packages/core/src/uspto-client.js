@@ -8,6 +8,14 @@ try {
   BrowserWindow = null;
   session = null;
 }
+
+let puppeteer;
+try {
+  puppeteer = require('puppeteer');
+} catch (e) {
+  puppeteer = null;
+}
+
 const Bottleneck = require('bottleneck');
 const { TMSEARCH_URL, TMSEARCH_PAGE, TSDR_BASE_URL, RATE_LIMITS } = require('./constants');
 
@@ -30,18 +38,37 @@ const downloadLimiter = new Bottleneck({
 });
 
 let apiKey = null;
+
+// Electron session state
 let searchWindow = null;
 let sessionReady = false;
+
+// Puppeteer session state
+let puppeteerBrowser = null;
+let puppeteerPage = null;
+let puppeteerCookies = null;
+
+const isElectron = BrowserWindow !== null;
 
 function setApiKey(key) {
   apiKey = key;
 }
 
 /**
- * Initialize a hidden browser window to establish a session with tmsearch.uspto.gov.
- * This solves the WAF challenge and sets up cookies needed for API calls.
+ * Initialize session — uses Electron BrowserWindow or Puppeteer depending on environment.
  */
 async function initSession() {
+  if (isElectron) {
+    return initElectronSession();
+  } else {
+    return initPuppeteerSession();
+  }
+}
+
+/**
+ * Electron: hidden BrowserWindow to solve WAF and get session cookies.
+ */
+async function initElectronSession() {
   if (searchWindow && !searchWindow.isDestroyed()) {
     return;
   }
@@ -63,10 +90,9 @@ async function initSession() {
 
   try {
     await searchWindow.loadURL(TMSEARCH_PAGE);
-    // Wait for WAF challenge script to execute and set cookies
     await new Promise(resolve => setTimeout(resolve, 4000));
     sessionReady = true;
-    console.log('[USPTO] Search session initialized');
+    console.log('[USPTO] Electron search session initialized');
   } catch (err) {
     console.error('[USPTO] Failed to init session:', err.message);
     throw new Error('Could not connect to USPTO. Check your internet connection.');
@@ -74,24 +100,95 @@ async function initSession() {
 }
 
 /**
- * Ensure the hidden browser session is ready before making API calls.
+ * Puppeteer: headless browser to solve WAF and extract cookies for fetch requests.
+ */
+async function initPuppeteerSession() {
+  if (puppeteerCookies && sessionReady) {
+    return;
+  }
+
+  if (!puppeteer) {
+    throw new Error('Puppeteer is not installed. Cannot initialize USPTO session.');
+  }
+
+  console.log('[USPTO] Initializing Puppeteer session...');
+
+  if (!puppeteerBrowser) {
+    puppeteerBrowser = await puppeteer.launch({
+      headless: 'new',
+      args: [
+        '--no-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-setuid-sandbox',
+      ],
+    });
+  }
+
+  try {
+    puppeteerPage = await puppeteerBrowser.newPage();
+    await puppeteerPage.setUserAgent(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+    );
+    await puppeteerPage.goto(TMSEARCH_PAGE, { waitUntil: 'networkidle2', timeout: 30000 });
+    // Wait for WAF challenge
+    await new Promise(resolve => setTimeout(resolve, 5000));
+
+    puppeteerCookies = await puppeteerPage.cookies();
+    sessionReady = true;
+    console.log('[USPTO] Puppeteer session initialized, got', puppeteerCookies.length, 'cookies');
+
+    // Close the page to free memory, keep browser alive
+    await puppeteerPage.close();
+    puppeteerPage = null;
+  } catch (err) {
+    console.error('[USPTO] Puppeteer session failed:', err.message);
+    if (puppeteerPage) { await puppeteerPage.close().catch(() => {}); puppeteerPage = null; }
+    throw new Error('Could not connect to USPTO. Check your internet connection.');
+  }
+
+  // Auto-refresh cookies every 25 minutes
+  setTimeout(() => {
+    sessionReady = false;
+    puppeteerCookies = null;
+    console.log('[USPTO] Session cookies expired, will refresh on next request');
+  }, 25 * 60 * 1000);
+}
+
+/**
+ * Ensure the session is ready before making API calls.
  */
 async function ensureSession() {
-  if (!sessionReady || !searchWindow || searchWindow.isDestroyed()) {
-    await initSession();
+  if (isElectron) {
+    if (!sessionReady || !searchWindow || searchWindow.isDestroyed()) {
+      await initSession();
+    }
+  } else {
+    if (!sessionReady || !puppeteerCookies) {
+      await initSession();
+    }
   }
 }
 
 /**
- * Make a fetch request using the BrowserWindow's session cookies.
- * Uses Electron's net module via session.fetch() to run in the main process,
- * completely avoiding Zone.js/Angular promise interception in the renderer.
+ * Make a fetch request with session cookies.
+ * Electron: uses session.fetch(). Node.js: uses global fetch with cookie header.
  */
 async function sessionFetch(url, options = {}) {
   await ensureSession();
-  const ses = searchWindow.webContents.session;
-  const response = await ses.fetch(url, options);
-  return response;
+
+  if (isElectron) {
+    const ses = searchWindow.webContents.session;
+    return ses.fetch(url, options);
+  } else {
+    // Build cookie header from Puppeteer cookies
+    const cookieString = puppeteerCookies
+      .map(c => `${c.name}=${c.value}`)
+      .join('; ');
+    const headers = { ...(options.headers || {}), Cookie: cookieString };
+    const response = await fetch(url, { ...options, headers });
+    return response;
+  }
 }
 
 /**
@@ -288,10 +385,17 @@ function normalizeSearchResults(data) {
 /**
  * Clean up the hidden browser window on app exit.
  */
-function destroy() {
+async function destroy() {
   if (searchWindow && !searchWindow.isDestroyed()) {
     searchWindow.destroy();
     searchWindow = null;
+    sessionReady = false;
+  }
+  if (puppeteerBrowser) {
+    await puppeteerBrowser.close().catch(() => {});
+    puppeteerBrowser = null;
+    puppeteerPage = null;
+    puppeteerCookies = null;
     sessionReady = false;
   }
 }
