@@ -106,6 +106,24 @@ async function initElectronSession() {
 }
 
 /**
+ * Find system-installed Chromium/Chrome executable.
+ */
+function findSystemChrome() {
+  const fs = require('fs');
+  const candidates = [
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/google-chrome',
+    '/snap/bin/chromium',
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
+/**
  * Puppeteer: headless browser to solve WAF and extract cookies for fetch requests.
  */
 async function initPuppeteerSession() {
@@ -120,7 +138,8 @@ async function initPuppeteerSession() {
   console.log('[USPTO] Initializing Puppeteer session...');
 
   if (!puppeteerBrowser) {
-    puppeteerBrowser = await puppeteer.launch({
+    const systemChrome = findSystemChrome();
+    const launchOptions = {
       headless: 'new',
       args: [
         '--no-sandbox',
@@ -130,7 +149,12 @@ async function initPuppeteerSession() {
         '--disable-blink-features=AutomationControlled',
         '--window-size=1920,1080',
       ],
-    });
+    };
+    if (systemChrome) {
+      launchOptions.executablePath = systemChrome;
+      console.log('[USPTO] Using system Chrome:', systemChrome);
+    }
+    puppeteerBrowser = await puppeteer.launch(launchOptions);
   }
 
   try {
@@ -145,11 +169,24 @@ async function initPuppeteerSession() {
       Object.defineProperty(navigator, 'webdriver', { get: () => false });
     });
 
-    await puppeteerPage.goto(TMSEARCH_PAGE, { waitUntil: 'networkidle0', timeout: 60000 });
-    // Wait for WAF challenge to fully resolve
-    await new Promise(resolve => setTimeout(resolve, 8000));
+    console.log('[USPTO] Navigating to', TMSEARCH_PAGE);
+    await puppeteerPage.goto(TMSEARCH_PAGE, { waitUntil: 'networkidle2', timeout: 60000 });
 
-    puppeteerCookies = await puppeteerPage.cookies();
+    // Wait for WAF challenge — poll for cookies up to 30 seconds
+    let cookies = [];
+    for (let i = 0; i < 15; i++) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      cookies = await puppeteerPage.cookies();
+      const url = puppeteerPage.url();
+      console.log(`[USPTO] Wait ${(i + 1) * 2}s — ${cookies.length} cookies, url: ${url}`);
+      // WAF solved when we have multiple cookies (aws-waf-token + session)
+      if (cookies.length >= 2) break;
+    }
+
+    // Log cookie names for debugging
+    console.log('[USPTO] Cookie names:', cookies.map(c => c.name).join(', '));
+
+    puppeteerCookies = cookies;
     sessionReady = true;
     console.log('[USPTO] Puppeteer session initialized, got', puppeteerCookies.length, 'cookies');
 
