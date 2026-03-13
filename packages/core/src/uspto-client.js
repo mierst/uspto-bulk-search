@@ -11,15 +11,9 @@ try {
 
 let puppeteer;
 try {
-  puppeteer = require('puppeteer-extra');
-  const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-  puppeteer.use(StealthPlugin());
+  puppeteer = require('puppeteer');
 } catch (e) {
-  try {
-    puppeteer = require('puppeteer');
-  } catch (e2) {
-    puppeteer = null;
-  }
+  puppeteer = null;
 }
 
 const Bottleneck = require('bottleneck');
@@ -106,10 +100,10 @@ async function initElectronSession() {
 }
 
 /**
- * Puppeteer: headless browser to solve WAF and extract cookies for fetch requests.
+ * Puppeteer: headless Chrome to solve WAF and execute API calls in browser context.
  */
 async function initPuppeteerSession() {
-  if (puppeteerCookies && sessionReady) {
+  if (sessionReady && puppeteerPage && !puppeteerPage.isClosed()) {
     return;
   }
 
@@ -120,31 +114,9 @@ async function initPuppeteerSession() {
   console.log('[USPTO] Initializing Puppeteer session...');
 
   if (!puppeteerBrowser) {
-    // Use Puppeteer's bundled Chrome (not system snap Chromium which has library issues)
-    // with Xvfb for non-headless mode to avoid WAF bot detection
-    const { execSync } = require('child_process');
-    let hasXvfb = false;
-    try {
-      execSync('pgrep -x Xvfb', { stdio: 'ignore' });
-      hasXvfb = true;
-    } catch {
-      try {
-        execSync('Xvfb :99 -screen 0 1920x1080x24 &', { stdio: 'ignore' });
-        // Give Xvfb a moment to start
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        hasXvfb = true;
-        console.log('[USPTO] Started Xvfb on :99');
-      } catch (e) {
-        console.log('[USPTO] Xvfb not available, using headless mode');
-      }
-    }
-
-    if (hasXvfb) {
-      process.env.DISPLAY = ':99';
-    }
-
-    const launchOptions = {
-      headless: hasXvfb ? false : 'new',
+    puppeteerBrowser = await puppeteer.launch({
+      headless: 'new',
+      protocolTimeout: 60000,
       args: [
         '--no-sandbox',
         '--disable-dev-shm-usage',
@@ -153,9 +125,8 @@ async function initPuppeteerSession() {
         '--disable-blink-features=AutomationControlled',
         '--window-size=1920,1080',
       ],
-    };
-    console.log('[USPTO] Launching Chrome (headless:', launchOptions.headless, ', xvfb:', hasXvfb, ')');
-    puppeteerBrowser = await puppeteer.launch(launchOptions);
+    });
+    console.log('[USPTO] Chrome launched');
   }
 
   try {
@@ -164,35 +135,25 @@ async function initPuppeteerSession() {
     await puppeteerPage.setUserAgent(
       'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
     );
-
-    // Remove webdriver flag
     await puppeteerPage.evaluateOnNewDocument(() => {
       Object.defineProperty(navigator, 'webdriver', { get: () => false });
     });
 
     console.log('[USPTO] Navigating to', TMSEARCH_PAGE);
-    // Don't wait for network idle — the Angular app has persistent connections
     await puppeteerPage.goto(TMSEARCH_PAGE, { waitUntil: 'load', timeout: 90000 });
-    console.log('[USPTO] Page loaded, url:', puppeteerPage.url());
 
-    // Poll for the aws-waf-token cookie — WAF challenge JS needs time to execute
-    let cookies = [];
-    for (let i = 0; i < 10; i++) {
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      cookies = await puppeteerPage.cookies();
-      const docCookie = await puppeteerPage.evaluate(() => document.cookie).catch(() => '');
-      const title = await puppeteerPage.title().catch(() => '');
-      console.log(`[USPTO] Poll ${(i + 1) * 3}s — ${cookies.length} cookies (doc: "${docCookie.substring(0, 50)}"), title: "${title}"`);
-      if (cookies.some(c => c.name === 'aws-waf-token')) break;
-    }
-    console.log('[USPTO] Final cookies:', cookies.map(c => c.name).join(', ') || '(none)');
+    // Wait for WAF challenge JS to execute and set cookies
+    await new Promise(resolve => setTimeout(resolve, 8000));
+
+    const cookies = await puppeteerPage.cookies();
+    const title = await puppeteerPage.title().catch(() => '');
+    console.log(`[USPTO] Page: "${title}", cookies: ${cookies.map(c => c.name).join(', ') || '(none)'}`);
 
     puppeteerCookies = cookies;
     sessionReady = true;
-    console.log('[USPTO] Puppeteer session initialized');
+    console.log('[USPTO] Puppeteer session ready');
 
-    // Keep page open — we'll execute fetches inside the browser context
-    // where WAF tokens are automatically managed
+    // Keep page open for in-browser fetch via page.evaluate()
   } catch (err) {
     console.error('[USPTO] Puppeteer session failed:', err.message);
     if (puppeteerPage) { await puppeteerPage.close().catch(() => {}); puppeteerPage = null; }
