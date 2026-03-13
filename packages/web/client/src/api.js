@@ -79,8 +79,12 @@ export const api = {
   getSettings: () => request(`${API}/settings`).then(r => r.json()),
   setSettings: (settings) => jsonPut(`${API}/settings`, settings),
 
-  // Auth
-  getMe: () => request(`${API}/auth/me`).then(r => r.json()),
+  // Auth — getMe uses fetch directly to avoid 401 redirect loop
+  getMe: async () => {
+    const res = await fetch(`${API}/auth/me`, { credentials: 'include' });
+    if (!res.ok) throw new Error('Not authenticated');
+    return res.json();
+  },
   logout: () => request(`${API}/auth/logout`, { method: 'POST' }),
 
   // External links (just window.open in web)
