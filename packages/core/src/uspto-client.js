@@ -11,9 +11,15 @@ try {
 
 let puppeteer;
 try {
-  puppeteer = require('puppeteer');
+  puppeteer = require('puppeteer-extra');
+  const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+  puppeteer.use(StealthPlugin());
 } catch (e) {
-  puppeteer = null;
+  try {
+    puppeteer = require('puppeteer');
+  } catch (e2) {
+    puppeteer = null;
+  }
 }
 
 const Bottleneck = require('bottleneck');
@@ -121,18 +127,27 @@ async function initPuppeteerSession() {
         '--disable-dev-shm-usage',
         '--disable-gpu',
         '--disable-setuid-sandbox',
+        '--disable-blink-features=AutomationControlled',
+        '--window-size=1920,1080',
       ],
     });
   }
 
   try {
     puppeteerPage = await puppeteerBrowser.newPage();
+    await puppeteerPage.setViewport({ width: 1920, height: 1080 });
     await puppeteerPage.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
     );
-    await puppeteerPage.goto(TMSEARCH_PAGE, { waitUntil: 'networkidle2', timeout: 30000 });
-    // Wait for WAF challenge
-    await new Promise(resolve => setTimeout(resolve, 5000));
+
+    // Remove webdriver flag
+    await puppeteerPage.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => false });
+    });
+
+    await puppeteerPage.goto(TMSEARCH_PAGE, { waitUntil: 'networkidle0', timeout: 60000 });
+    // Wait for WAF challenge to fully resolve
+    await new Promise(resolve => setTimeout(resolve, 8000));
 
     puppeteerCookies = await puppeteerPage.cookies();
     sessionReady = true;
