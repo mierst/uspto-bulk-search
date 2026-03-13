@@ -191,10 +191,12 @@ async function initPuppeteerSession() {
     });
 
     console.log('[USPTO] Navigating to', TMSEARCH_PAGE);
-    await puppeteerPage.goto(TMSEARCH_PAGE, { waitUntil: 'networkidle2', timeout: 60000 });
+    // Use 'domcontentloaded' — the Angular app's persistent connections
+    // prevent 'networkidle2' from ever resolving on slower servers
+    await puppeteerPage.goto(TMSEARCH_PAGE, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-    // Wait for WAF challenge script to execute and set aws-waf-token cookie
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    // Wait for WAF challenge script to fully execute and set aws-waf-token cookie
+    await new Promise(resolve => setTimeout(resolve, 8000));
 
     const cookies = await puppeteerPage.cookies();
     console.log('[USPTO] Cookies:', cookies.map(c => c.name).join(', '));
