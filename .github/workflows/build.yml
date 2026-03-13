@@ -68,7 +68,10 @@ jobs:
 
       - run: npm install
 
-      - run: npm run build
+      - run: npm run build:renderer
+
+      - name: Build installer and publish to GitHub Release
+        run: npx electron-builder --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -76,10 +79,3 @@ jobs:
         with:
           name: windows-installer
           path: dist/installer/*.exe
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        if: needs.auto-tag.outputs.new_tag != '' || startsWith(github.ref, 'refs/tags/v')
-        with:
-          tag_name: ${{ needs.auto-tag.outputs.new_tag || github.ref_name }}
-          files: dist/installer/*.exe
