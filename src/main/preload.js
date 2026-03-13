@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // External links
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
+  openTMSearch: (url) => ipcRenderer.invoke('tmsearch:open', url),
 
   // Batch
   batchSearch: (marks) => ipcRenderer.invoke('batch:search', marks),

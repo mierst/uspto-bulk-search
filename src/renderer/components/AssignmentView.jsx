@@ -174,7 +174,7 @@ export default function AssignmentView({ assignment, onBack }) {
         )}
         {assignment.serialNumber && (
           <button className="btn btn-secondary" onClick={() => {
-            window.api.openExternal(`https://tmsearch.uspto.gov/search/search-detail/${assignment.serialNumber}`);
+            window.api.openTMSearch(`https://tmsearch.uspto.gov/search/search-detail/${assignment.serialNumber}`);
           }}>
             View on TMSearch
           </button>

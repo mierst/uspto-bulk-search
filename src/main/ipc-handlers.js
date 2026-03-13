@@ -1,4 +1,4 @@
-const { ipcMain, dialog, shell } = require('electron');
+const { ipcMain, dialog, shell, BrowserWindow } = require('electron');
 const path = require('path');
 const Store = require('electron-store');
 const database = require('./database');
@@ -190,6 +190,19 @@ function registerIpcHandlers() {
     if (url.startsWith('https://tsdr.uspto.gov/') || url.startsWith('https://tmsearch.uspto.gov/')) {
       await shell.openExternal(url);
     }
+  });
+
+  // Open TMSearch URL in an Electron window (shares WAF session cookies)
+  ipcMain.handle('tmsearch:open', async (_event, url) => {
+    if (!url.startsWith('https://tmsearch.uspto.gov/')) return;
+    const win = new BrowserWindow({
+      width: 1100,
+      height: 800,
+      title: 'TMSearch',
+      webPreferences: { nodeIntegration: false, contextIsolation: true },
+    });
+    win.setMenuBarVisibility(false);
+    await win.loadURL(url);
   });
 
   // --- Batch Search ---
