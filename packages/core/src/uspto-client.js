@@ -48,7 +48,7 @@ let puppeteerBrowser = null;
 let puppeteerPage = null;
 let puppeteerCookies = null;
 
-const isElectron = BrowserWindow !== null;
+const isElectron = typeof BrowserWindow === 'function';
 
 function setApiKey(key) {
   apiKey = key;
