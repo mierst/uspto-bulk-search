@@ -4,7 +4,7 @@ vi.mock('electron', () => ({
   session: {},
 }));
 
-const { normalizeSearchResults } = require('../src/main/services/uspto-client');
+const { normalizeSearchResults } = require('../packages/core/src/uspto-client');
 
 describe('normalizeSearchResults', () => {
   it('maps _source fields from Elasticsearch response', () => {

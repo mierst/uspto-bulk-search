@@ -1,0 +1,13 @@
+{
+  "name": "@uspto-search/core",
+  "version": "1.0.7",
+  "description": "Shared business logic for USPTO Bulk Search",
+  "main": "src/index.js",
+  "dependencies": {
+    "bottleneck": "^2.19.5",
+    "papaparse": "^5.4.1",
+    "pdf-parse": "^1.1.1",
+    "pdfkit": "^0.15.0",
+    "sql.js": "^1.11.0"
+  }
+}

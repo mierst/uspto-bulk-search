@@ -1,4 +1,4 @@
-const constants = require('../src/shared/constants');
+const constants = require('../packages/core/src/constants');
 
 describe('constants', () => {
   it('has required URL constants', () => {

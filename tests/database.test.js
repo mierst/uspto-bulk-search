@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const database = require('../src/main/database');
+const database = require('../packages/core/src/database');
 
 let dataRoot;
 

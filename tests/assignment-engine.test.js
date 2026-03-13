@@ -1,4 +1,4 @@
-const { normalizeAssignment, buildChainOfTitle } = require('../src/main/services/assignment-engine');
+const { normalizeAssignment, buildChainOfTitle } = require('../packages/core/src/assignment-engine');
 
 describe('normalizeAssignment', () => {
   it('maps all fields from a full record', () => {

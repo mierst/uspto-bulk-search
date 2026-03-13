@@ -22,7 +22,7 @@ jobs:
           node-version: 20
           cache: npm
 
-      - run: npm install
+      - run: npm install --ignore-scripts
 
       - run: npm test
 
@@ -66,11 +66,20 @@ jobs:
           node-version: 20
           cache: npm
 
-      - run: npm install
+      - run: npm install --ignore-scripts
 
-      - run: npm run build:renderer
+      - name: Build renderer
+        run: npm run build:renderer --workspace=@uspto-search/desktop
+
+      - name: Prepare desktop node_modules for packaging
+        shell: bash
+        run: |
+          # electron-builder needs node_modules in the project dir
+          # Copy hoisted deps to packages/desktop/ so they're included in the ASAR
+          cp -r node_modules packages/desktop/node_modules
 
       - name: Build installer and publish to GitHub Release
+        working-directory: packages/desktop
         run: npx electron-builder --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -78,4 +87,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: windows-installer
-          path: dist/installer/*.exe
+          path: packages/desktop/dist/installer/*.exe
