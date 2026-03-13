@@ -190,20 +190,23 @@ async function initPuppeteerSession() {
     sessionReady = true;
     console.log('[USPTO] Puppeteer session initialized, got', puppeteerCookies.length, 'cookies');
 
-    // Close the page to free memory, keep browser alive
-    await puppeteerPage.close();
-    puppeteerPage = null;
+    // Keep page open — we'll execute fetches inside the browser context
+    // where WAF tokens are automatically managed
   } catch (err) {
     console.error('[USPTO] Puppeteer session failed:', err.message);
     if (puppeteerPage) { await puppeteerPage.close().catch(() => {}); puppeteerPage = null; }
     throw new Error('Could not connect to USPTO. Check your internet connection.');
   }
 
-  // Auto-refresh cookies every 25 minutes
-  setTimeout(() => {
+  // Auto-refresh session every 25 minutes
+  setTimeout(async () => {
     sessionReady = false;
     puppeteerCookies = null;
-    console.log('[USPTO] Session cookies expired, will refresh on next request');
+    if (puppeteerPage && !puppeteerPage.isClosed()) {
+      await puppeteerPage.close().catch(() => {});
+      puppeteerPage = null;
+    }
+    console.log('[USPTO] Session expired, will refresh on next request');
   }, 25 * 60 * 1000);
 }
 
@@ -216,7 +219,7 @@ async function ensureSession() {
       await initSession();
     }
   } else {
-    if (!sessionReady || !puppeteerCookies) {
+    if (!sessionReady || !puppeteerPage || puppeteerPage.isClosed()) {
       await initSession();
     }
   }
@@ -224,7 +227,9 @@ async function ensureSession() {
 
 /**
  * Make a fetch request with session cookies.
- * Electron: uses session.fetch(). Node.js: uses global fetch with cookie header.
+ * Electron: uses session.fetch().
+ * Node.js: executes fetch inside the Puppeteer page context so the browser
+ * handles WAF tokens, cookies, and headers automatically.
  */
 async function sessionFetch(url, options = {}) {
   await ensureSession();
@@ -233,13 +238,36 @@ async function sessionFetch(url, options = {}) {
     const ses = searchWindow.webContents.session;
     return ses.fetch(url, options);
   } else {
-    // Build cookie header from Puppeteer cookies
+    // Execute fetch inside the browser page context where WAF cookies are valid
+    if (puppeteerPage && !puppeteerPage.isClosed()) {
+      const result = await puppeteerPage.evaluate(async (fetchUrl, fetchOptions) => {
+        const res = await fetch(fetchUrl, fetchOptions);
+        const text = await res.text();
+        return { status: res.status, statusText: res.statusText, ok: res.ok, body: text };
+      }, url, { method: options.method, headers: options.headers, body: options.body });
+
+      // Wrap in a Response-like object
+      return {
+        ok: result.ok,
+        status: result.status,
+        statusText: result.statusText,
+        text: async () => result.body,
+        json: async () => JSON.parse(result.body),
+      };
+    }
+
+    // Fallback: use Node fetch with cookies + headers
     const cookieString = puppeteerCookies
       .map(c => `${c.name}=${c.value}`)
       .join('; ');
-    const headers = { ...(options.headers || {}), Cookie: cookieString };
-    const response = await fetch(url, { ...options, headers });
-    return response;
+    const headers = {
+      ...(options.headers || {}),
+      Cookie: cookieString,
+      Origin: 'https://tmsearch.uspto.gov',
+      Referer: 'https://tmsearch.uspto.gov/search/search-information',
+      'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    };
+    return fetch(url, { ...options, headers });
   }
 }
 
