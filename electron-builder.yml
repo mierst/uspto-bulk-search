@@ -5,6 +5,8 @@ directories:
   output: dist/installer
 files:
   - src/main/**/*
+  - src/shared/**/*
+  - src/migrations/**/*
   - dist/renderer/**/*
   - node_modules/**/*
 win:
