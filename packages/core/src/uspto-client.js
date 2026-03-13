@@ -106,24 +106,6 @@ async function initElectronSession() {
 }
 
 /**
- * Find system-installed Chromium/Chrome executable.
- */
-function findSystemChrome() {
-  const fs = require('fs');
-  const candidates = [
-    '/usr/bin/chromium-browser',
-    '/usr/bin/chromium',
-    '/usr/bin/google-chrome-stable',
-    '/usr/bin/google-chrome',
-    '/snap/bin/chromium',
-  ];
-  for (const p of candidates) {
-    if (fs.existsSync(p)) return p;
-  }
-  return null;
-}
-
-/**
  * Puppeteer: headless browser to solve WAF and extract cookies for fetch requests.
  */
 async function initPuppeteerSession() {
@@ -138,24 +120,29 @@ async function initPuppeteerSession() {
   console.log('[USPTO] Initializing Puppeteer session...');
 
   if (!puppeteerBrowser) {
-    // Start Xvfb virtual display if not already running (allows non-headless Chrome)
+    // Use Puppeteer's bundled Chrome (not system snap Chromium which has library issues)
+    // with Xvfb for non-headless mode to avoid WAF bot detection
     const { execSync } = require('child_process');
+    let hasXvfb = false;
     try {
       execSync('pgrep -x Xvfb', { stdio: 'ignore' });
-      console.log('[USPTO] Xvfb already running');
+      hasXvfb = true;
     } catch {
       try {
         execSync('Xvfb :99 -screen 0 1920x1080x24 &', { stdio: 'ignore' });
+        // Give Xvfb a moment to start
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        hasXvfb = true;
         console.log('[USPTO] Started Xvfb on :99');
       } catch (e) {
         console.log('[USPTO] Xvfb not available, using headless mode');
       }
     }
-    const hasXvfb = (() => {
-      try { execSync('pgrep -x Xvfb', { stdio: 'ignore' }); return true; } catch { return false; }
-    })();
 
-    const systemChrome = findSystemChrome();
+    if (hasXvfb) {
+      process.env.DISPLAY = ':99';
+    }
+
     const launchOptions = {
       headless: hasXvfb ? false : 'new',
       args: [
@@ -167,14 +154,7 @@ async function initPuppeteerSession() {
         '--window-size=1920,1080',
       ],
     };
-    if (hasXvfb) {
-      process.env.DISPLAY = ':99';
-      console.log('[USPTO] Using Xvfb virtual display :99 (non-headless)');
-    }
-    if (systemChrome) {
-      launchOptions.executablePath = systemChrome;
-      console.log('[USPTO] Using system Chrome:', systemChrome);
-    }
+    console.log('[USPTO] Launching Chrome (headless:', launchOptions.headless, ', xvfb:', hasXvfb, ')');
     puppeteerBrowser = await puppeteer.launch(launchOptions);
   }
 
